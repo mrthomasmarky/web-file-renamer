@@ -1,0 +1,465 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="File Renamer">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <title>Advanced File Renamer</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  </head>
+<body class="bg-gray-100 min-h-screen p-4">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold mb-4 text-center">Advanced File Renamer</h1>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700">Upload Files</label>
+      <input type="file" id="fileInput" multiple class="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700">Renaming Options</label>
+      <div class="mt-2 space-y-4">
+        <!-- Sorting -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="sorting" class="form-radio">
+            <span class="ml-2">Sorting</span>
+          </label>
+          <select id="sortMethod" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+            <option value="natural">Natural Sorting</option>
+            <option value="name">File Name Order</option>
+            <option value="name_reverse">Reverse File Name Order</option>
+            <option value="mod_time">Modification Time Order</option>
+            <option value="mod_time_reverse">Reverse Modification Time Order</option>
+            <option value="random">Random Order</option>
+            <option value="reverse">Reverse Sorting</option>
+          </select>
+        </div>
+        <!-- File Extension -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="extension" class="form-radio">
+            <span class="ml-2">File Extension</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <select id="extensionMode" class="w-1/2 p-2 border border-gray-300 rounded-md">
+              <option value="uppercase">Uppercase</option>
+              <option value="lowercase">Lowercase</option>
+              <option value="custom">Custom Extension</option>
+            </select>
+            <input type="text" id="customExtension" placeholder="New extension (e.g., txt)" class="w-1/2 p-2 border border-gray-300 rounded-md" disabled />
+          </div>
+        </div>
+        <!-- Case -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="case" class="form-radio">
+            <span class="ml-2">Case Conversion</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <select id="caseMode" class="w-1/2 p-2 border border-gray-300 rounded-md">
+              <option value="uppercase">Uppercase</option>
+              <option value="lowercase">Lowercase</option>
+              <option value="title">Title Case</option>
+              <option value="sentence">Sentence Case</option>
+            </select>
+            <label class="inline-flex items-center">
+              <input type="checkbox" id="ignoreExtensionCase" class="form-checkbox" checked>
+              <span class="ml-2">Ignore Extensions</span>
+            </label>
+          </div>
+        </div>
+        <!-- Order -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="order" class="form-radio">
+            <span class="ml-2">Order (Numbering)</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <input type="text" id="orderTemplate" placeholder="Template (e.g., File_#.jpg or {self}_#)" class="w-1/2 p-2 border border-gray-300 rounded-md" />
+            <input type="number" id="orderDigits" placeholder="Digits" min="1" class="w-1/4 p-2 border border-gray-300 rounded-md" value="2" />
+            <input type="number" id="orderStart" placeholder="Start" min="1" class="w-1/4 p-2 border border-gray-300 rounded-md" value="1" />
+          </div>
+        </div>
+        <!-- Replace -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="replace" class="form-radio">
+            <span class="ml-2">Replace</span>
+          </label>
+          <div id="replaceRules" class="mt-1 space-y-2">
+            <div class="flex space-x-2">
+              <input type="text" class="replace-search w-1/2 p-2 border border-gray-300 rounded-md" placeholder="Search pattern" />
+              <input type="text" class="replace-replace w-1/2 p-2 border border-gray-300 rounded-md" placeholder="Replace with" />
+            </div>
+          </div>
+          <button id="addReplaceRule" class="mt-2 text-blue-500 hover:underline">Add Another Rule</button>
+        </div>
+        <!-- Insert -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="insert" class="form-radio">
+            <span class="ml-2">Insert</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <input type="text" id="insertText" placeholder="Text to insert" class="w-1/2 p-2 border border-gray-300 rounded-md" />
+            <input type="number" id="insertPosition" placeholder="Position (1-based)" class="w-1/4 p-2 border border-gray-300 rounded-md" />
+            <select id="insertMode" class="w-1/4 p-2 border border-gray-300 rounded-md">
+              <option value="position">At Position</option>
+              <option value="before">Before Filename</option>
+              <option value="after">After Filename</option>
+            </select>
+          </div>
+        </div>
+        <!-- Cut -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="cut" class="form-radio">
+            <span class="ml-2">Cut</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <input type="number" id="cutStart" placeholder="Start (1-based)" class="w-1/2 p-2 border border-gray-300 rounded-md" />
+            <input type="number" id="cutLength" placeholder="Length (negative for end)" class="w-1/2 p-2 border border-gray-300 rounded-md" />
+          </div>
+        </div>
+        <!-- Random -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="random" class="form-radio">
+            <span class="ml-2">Random</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <input type="number" id="randomLength" placeholder="Length" min="1" class="w-1/4 p-2 border border-gray-300 rounded-md" value="8" />
+            <input type="text" id="randomChars" placeholder="Characters" class="w-1/4 p-2 border border-gray-300 rounded-md" value="abcdefghijklmnopqrstuvwxyz0123456789" />
+            <select id="randomMode" class="w-1/4 p-2 border border-gray-300 rounded-md">
+              <option value="replace">Replace Filename</option>
+              <option value="before">Before Filename</option>
+              <option value="after">After Filename</option>
+              <option value="position">At Position</option>
+            </select>
+            <input type="number" id="randomPosition" placeholder="Position (1-based)" class="w-1/4 p-2 border border-gray-300 rounded-md" disabled />
+          </div>
+        </div>
+        <!-- Remove -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="remove" class="form-radio">
+            <span class="ml-2">Remove</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <input type="text" id="removeChars" placeholder="Characters to remove" class="w-1/2 p-2 border border-gray-300 rounded-md" />
+            <label class="inline-flex items-center">
+              <input type="checkbox" id="removeAll" class="form-checkbox">
+              <span class="ml-2">Remove All Except These</span>
+            </label>
+          </div>
+        </div>
+        <!-- List -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="list" class="form-radio">
+            <span class="ml-2">List</span>
+          </label>
+          <textarea id="listNames" placeholder="Enter list of new names (one per line)" class="mt-1 block w-full p-2 border border-gray-300 rounded-md" rows="4"></textarea>
+          <label class="inline-flex items-center mt-1">
+            <input type="checkbox" id="ignoreExtensionList" class="form-checkbox" checked>
+            <span class="ml-2">Ignore File Extensions</span>
+          </label>
+        </div>
+        <!-- Customize -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="customize" class="form-radio">
+            <span class="ml-2">Customize</span>
+          </label>
+          <textarea id="customTable" placeholder="[Original Name] [New Name]\nfile1.jpg newfile1.jpg" class="mt-1 block w-full p-2 border border-gray-300 rounded-md" rows="4"></textarea>
+          <input type="text" id="customSeparator" placeholder="Separator (e.g., space)" class="mt-1 block w-full p-2 border border-gray-300 rounded-md" value=" " />
+        </div>
+        <!-- Regular Expressions -->
+        <div>
+          <label class="inline-flex items-center">
+            <input type="radio" name="renameOption" value="regex" class="form-radio">
+            <span class="ml-2">Regular Expressions</span>
+          </label>
+          <div class="flex space-x-2 mt-1">
+            <input type="text" id="regexPattern" placeholder="Pattern (e.g., \d+)" class="w-1/2 p-2 border border-gray-300 rounded-md" />
+            <input type="text" id="regexReplace" placeholder="Replace with (e.g., $1)" class="w-1/2 p-2 border border-gray-300 rounded-md" />
+          </div>
+        </div>
+      </div>
+    </div>
+    <button id="previewBtn" class="w-full bg-gray-500 text-white p-2 rounded-md hover:bg-gray-600 mb-2">Preview</button>
+    <button id="renameBtn" class="w-full bg-blue-500 text-white p-2 rounded-md hover:bg-blue-600">Rename & Download</button>
+    <div id="fileList" class="mt-4"></div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const previewBtn = document.getElementById('previewBtn');
+    const renameBtn = document.getElementById('renameBtn');
+    const fileListDiv = document.getElementById('fileList');
+    const addReplaceRule = document.getElementById('addReplaceRule');
+    let filesArray = [];
+
+    // Enable/disable custom extension input
+    document.getElementById('extensionMode').addEventListener('change', (e) => {
+      document.getElementById('customExtension').disabled = e.target.value !== 'custom';
+    });
+
+    // Enable/disable random position input
+    document.getElementById('randomMode').addEventListener('change', (e) => {
+      document.getElementById('randomPosition').disabled = e.target.value !== 'position';
+    });
+
+    // Add new replace rule
+    addReplaceRule.addEventListener('click', () => {
+      const ruleDiv = document.createElement('div');
+      ruleDiv.className = 'flex space-x-2';
+      ruleDiv.innerHTML = `
+        <input type="text" class="replace-search w-1/2 p-2 border border-gray-300 rounded-md" placeholder="Search pattern" />
+        <input type="text" class="replace-replace w-1/2 p-2 border border-gray-300 rounded-md" placeholder="Replace with" />
+      `;
+      document.getElementById('replaceRules').appendChild(ruleDiv);
+    });
+
+    // Update file list display
+    fileInput.addEventListener('change', () => {
+      filesArray = Array.from(fileInput.files).map(file => ({
+        file,
+        name: file.name,
+        lastModified: file.lastModified
+      }));
+      updateFileList();
+    });
+
+    function updateFileList() {
+      fileListDiv.innerHTML = '';
+      filesArray.forEach((item, index) => {
+        const p = document.createElement('p');
+        p.textContent = `Original: ${item.name} → New: ${item.newName || item.name}`;
+        fileListDiv.appendChild(p);
+      });
+    }
+
+    // Sorting function
+    function sortFiles(method) {
+      switch (method) {
+        case 'natural':
+          filesArray.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+          break;
+        case 'name':
+          filesArray.sort((a, b) => a.name.localeCompare(b.name));
+          break;
+        case 'name_reverse':
+          filesArray.sort((a, b) => b.name.localeCompare(a.name));
+          break;
+        case 'mod_time':
+          filesArray.sort((a, b) => a.lastModified - b.lastModified);
+          break;
+        case 'mod_time_reverse':
+          filesArray.sort((a, b) => b.lastModified - a.lastModified);
+          break;
+        case 'random':
+          filesArray.sort(() => Math.random() - 0.5);
+          break;
+        case 'reverse':
+          filesArray.reverse();
+          break;
+      }
+    }
+
+    // Random string generator
+    function generateRandomString(length, chars) {
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
+
+    // Preview and rename logic
+    async function processFiles(preview = false) {
+      if (filesArray.length === 0) {
+        alert('Please upload at least one file.');
+        return;
+      }
+
+      const renameOption = document.querySelector('input[name="renameOption"]:checked').value;
+      const zip = preview ? null : new JSZip();
+
+      filesArray.forEach((item, index) => {
+        let newName = item.name;
+        const extension = item.name.split('.').pop();
+        const baseName = item.name.substring(0, item.name.lastIndexOf('.'));
+
+        if (renameOption === 'sorting') {
+          sortFiles(document.getElementById('sortMethod').value);
+          newName = item.name; // Sorting only changes order, not names
+        } else if (renameOption === 'extension') {
+          const mode = document.getElementById('extensionMode').value;
+          const customExt = document.getElementById('customExtension').value;
+          newName = mode === 'uppercase' ? `${baseName}.${extension.toUpperCase()}` :
+                    mode === 'lowercase' ? `${baseName}.${extension.toLowerCase()}` :
+                    `${baseName}.${customExt || extension}`;
+        } else if (renameOption === 'case') {
+          const mode = document.getElementById('caseMode').value;
+          const ignoreExt = document.getElementById('ignoreExtensionCase').checked;
+          let newBase = baseName;
+          if (mode === 'uppercase') newBase = baseName.toUpperCase();
+          else if (mode === 'lowercase') newBase = baseName.toLowerCase();
+          else if (mode === 'title') newBase = baseName.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+          else if (mode === 'sentence') newBase = baseName.charAt(0).toUpperCase() + baseName.slice(1).toLowerCase();
+          newName = ignoreExt ? `${newBase}.${extension}` : `${newBase}.${extension.toLowerCase()}`;
+        } else if (renameOption === 'order') {
+          const template = document.getElementById('orderTemplate').value;
+          const digits = parseInt(document.getElementById('orderDigits').value) || 2;
+          const start = parseInt(document.getElementById('orderStart').value) || 1;
+          const number = (start + index).toString().padStart(digits, '0');
+          newName = template.replace('#', number).replace('{self}', baseName) + '.' + extension;
+        } else if (renameOption === 'replace') {
+          let tempName = baseName;
+          document.querySelectorAll('.replace-search').forEach((searchInput, i) => {
+            const search = searchInput.value;
+            const replace = document.querySelectorAll('.replace-replace')[i].value;
+            if (search) tempName = tempName.split(search).join(replace);
+          });
+          newName = `${tempName}.${extension}`;
+        } else if (renameOption === 'insert') {
+          const text = document.getElementById('insertText').value;
+          const position = parseInt(document.getElementById('insertPosition').value) || 1;
+          const mode = document.getElementById('insertMode').value;
+          if (mode === 'before') newName = `${text}${baseName}.${extension}`;
+          else if (mode === 'after') newName = `${baseName}${text}.${extension}`;
+          else {
+            const pos = position - 1;
+            newName = `${baseName.slice(0, pos)}${text}${baseName.slice(pos)}.${extension}`;
+          }
+        } else if (renameOption === 'cut') {
+          const start = parseInt(document.getElementById('cutStart').value) || 1;
+          const length = parseInt(document.getElementById('cutLength').value);
+          const pos = start - 1;
+          if (length >= 0) {
+            newName = `${baseName.slice(pos, pos + length)}.${extension}`;
+          } else {
+            newName = `${baseName.slice(pos, length)}.${extension}`;
+          }
+        } else if (renameOption === 'random') {
+          const length = parseInt(document.getElementById('randomLength').value) || 8;
+          const chars = document.getElementById('randomChars').value || 'abcdefghijklmnopqrstuvwxyz0123456789';
+          const mode = document.getElementById('randomMode').value;
+          const position = parseInt(document.getElementById('randomPosition').value) || 1;
+          const randomStr = generateRandomString(length, chars);
+          if (mode === 'replace') newName = `${randomStr}.${extension}`;
+          else if (mode === 'before') newName = `${randomStr}${baseName}.${extension}`;
+          else if (mode === 'after') newName = `${baseName}${randomStr}.${extension}`;
+          else {
+            const pos = position - 1;
+            newName = `${baseName.slice(0, pos)}${randomStr}${baseName.slice(pos)}.${extension}`;
+          }
+        } else if (renameOption === 'remove') {
+          const chars = document.getElementById('removeChars').value;
+          const removeAll = document.getElementById('removeAll').checked;
+          let tempName = baseName;
+          if (removeAll) {
+            tempName = Array.from(baseName).filter(c => chars.includes(c)).join('');
+          } else {
+            tempName = Array.from(baseName).filter(c => !chars.includes(c)).join('');
+          }
+          newName = `${tempName}.${extension}`;
+        } else if (renameOption === 'list') {
+          const names = document.getElementById('listNames').value.split('\n').filter(n => n.trim());
+          const ignoreExt = document.getElementById('ignoreExtensionList').checked;
+          if (index < names.length) {
+            newName = ignoreExt ? `${names[index]}.${extension}` : names[index];
+          }
+        } else if (renameOption === 'customize') {
+          const table = document.getElementById('customTable').value.split('\n').filter(l => l.trim());
+          const separator = document.getElementById('customSeparator').value || ' ';
+          const lookup = {};
+          table.forEach(line => {
+            const [oldName, newName] = line.split(separator, 2);
+            if (oldName && newName) lookup[oldName.trim()] = newName.trim();
+          });
+          if (lookup[item.name]) {
+            newName = lookup[item.name].includes('.') ? lookup[item.name] : `${lookup[item.name]}.${extension}`;
+          }
+        } else if (renameOption === 'regex') {
+          const pattern = document.getElementById('regexPattern').value;
+          const replace = document.getElementById('regexReplace').value;
+          try {
+            const regex = new RegExp(pattern, 'g');
+            newName = `${baseName.replace(regex, replace)}.${extension}`;
+          } catch (e) {
+            alert('Invalid regular expression');
+            return;
+          }
+        }
+
+        item.newName = newName;
+        if (!preview) zip.file(newName, item.file);
+      });
+
+      if (preview) {
+        updateFileList();
+      } else {
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, 'renamed_files.zip');
+      }
+    }
+
+    previewBtn.addEventListener('click', () => processFiles(true));
+    renameBtn.addEventListener('click', () => processFiles(false));
+    if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(() => console.log('Service Worker Registered'))
+    .catch(error => console.error('Service Worker Error:', error));
+}
+if (!window.matchMedia('(display-mode: standalone)').matches) {
+  alert('Add this app to your Home Screen for a better experience!');
+}
+  </script>
+</body>
+</html>
